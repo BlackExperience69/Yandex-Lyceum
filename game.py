@@ -157,3 +157,281 @@ class MyGame(object):
 
         # Состояние игры - играет
         self.state = MyGame.PLAYING
+        def run(self):
+        """Бесконечный цикл обработки событий"""
+        running = True
+        while running:
+            event = pygame.event.wait()
+
+            # Хочу выйти
+            if event.type == pygame.QUIT:
+                running = False
+
+            # Состояние игры - презапуск
+            elif event.type == MyGame.REFRESH:
+
+                if self.state != MyGame.WELCOME:
+
+                    keys = pygame.key.get_pressed()
+
+                    if keys[pygame.K_SPACE]:
+                        new_time = datetime.datetime.now()
+                        if new_time - self.fire_time > \
+                                datetime.timedelta(seconds=0.15):
+                            # между ними должно быть не менее 0,15 задержки
+                            # запуск каждой ракеты
+
+                            # запустить ракету
+                            self.spaceship.fire()
+
+                            # ПИУУУУУУ
+                            self.missile_sound.play()
+
+                            # Время выстрела
+                            self.fire_time = new_time
+
+                    if self.state == MyGame.PLAYING:
+                        # Продолжение игры
+
+                        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                            # при нажатии клавиши "d" или "Стрелка вправо" поворот
+                            # космического корабля по часовой стрелке на 10 градусов
+                            self.spaceship.angle -= 10
+                            self.spaceship.angle %= 360
+
+                        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                            # при нажатии клавиши "d" или "Стрелка вправо" поворот
+                            # космического корабля против часовой стрелки на 10 градусов
+                            self.spaceship.angle += 10
+                            self.spaceship.angle %= 360
+
+                        if keys[pygame.K_UP] or keys[pygame.K_w]:
+                            # если нажата "w" или "стрелка вверх" ,
+                            # мы должны ускориться
+                            self.spaceship.is_throttle_on = True
+
+                            # расчет скорости
+                            if self.spaceship.speed < 20:
+                                self.spaceship.speed += 1
+                        else:
+                            # если клавиша дроссельной заслонки ("d" или " up")
+                            # не нажимается, притормози
+                            if self.spaceship.speed > 0:
+                                self.spaceship.speed -= 1
+                            self.spaceship.is_throttle_on = False
+
+                        # если на экране есть ракеты, обработайте их
+                        if len(self.spaceship.active_missiles) > 0:
+                            self.missiles_physics()
+
+                        # Физика метеоров
+                        if len(self.rocks) > 0:
+                            self.rocks_physics()
+
+                        # физика корабля
+                        self.physics()
+
+                # нарисовать
+                self.draw()
+
+            # Воскрешение
+            elif event.type == MyGame.START:
+                pygame.time.set_timer(MyGame.START, 0)  # обнуление таймера
+                if self.lives < 1:
+                    self.game_over()
+                else:
+                    self.rocks = []
+                    for i in range(4):
+                        self.make_rock()
+                    # начать заново
+                    self.start()
+
+            # Перейти от гейм овера к игре
+            elif event.type == MyGame.RESTART:
+                pygame.time.set_timer(MyGame.RESTART, 0)  # turn the timer off
+                self.state = MyGame.STARTING
+
+            # пользователь нажимает, чтобы начать новую игру
+            elif event.type == pygame.MOUSEBUTTONDOWN and (self.state == MyGame.STARTING or
+                                                           self.state == MyGame.WELCOME):
+                self.do_init()
+
+            # Press Enter
+            elif event.type == pygame.KEYDOWN \
+                    and event.key == pygame.K_RETURN and (self.state == MyGame.STARTING or
+                                                          self.state == MyGame.WELCOME):
+                self.do_init()
+
+    def game_over(self):
+        """Смерть"""
+        self.soundtrack.stop()
+        self.state = MyGame.GAME_OVER
+
+        self.gameover_sound.play()
+        delay = int((self.gameover_sound.get_length() + 1) * 1000)
+        pygame.time.set_timer(MyGame.RESTART, delay)
+
+
+    def die(self):
+        """Потеря жизни"""
+        self.soundtrack.stop()
+        # Не начать пока не закончится смерть
+        self.lives -= 1
+        self.counter = 0
+        self.state = MyGame.DYING
+
+        self.die_sound.play()
+        delay = int((self.die_sound.get_length() + 1) * 1000)
+        pygame.time.set_timer(MyGame.START, delay)
+
+    def physics(self):
+        """Физика жизни"""
+
+        if self.state == MyGame.PLAYING:
+            # вызрв функции движения
+            self.spaceship.move()
+
+            """План осуществить анти-выход за границы"""
+
+    def missiles_physics(self):
+        """Физика пулек"""
+
+        # Активные пульки
+        if len(self.spaceship.active_missiles) > 0:
+            for missile in self.spaceship.active_missiles:
+                # Их движение
+                missile.move()
+
+                # проверьте столкновение с каждым камнем
+                for rock in self.rocks:
+                    if rock.size == "big":
+                        # если ракета попадет в Большой Камень, уничтожьте его,
+                        # сделайте два камня среднего размера и дайте 20 баллов
+                        if distance(missile.position, rock.position) < 80:
+                            self.rocks.remove(rock)
+                            if missile in self.spaceship.active_missiles:
+                                self.spaceship.active_missiles.remove(missile)
+                            self.make_rock("normal", (rock.position[0] + 10, rock.position[1]))
+                            self.make_rock("normal", (rock.position[0] - 10, rock.position[1]))
+                            self.score += 20
+
+                    elif rock.size == "normal":
+                        # если ракета попадет в камень среднего размера, уничтожьте его,
+                        # сделайте два небольших камня и дайте 50 баллов
+                        if distance(missile.position, rock.position) < 55:
+                            self.rocks.remove(rock)
+                            if missile in self.spaceship.active_missiles:
+                                self.spaceship.active_missiles.remove(missile)
+                            self.make_rock("small", (rock.position[0] + 10, rock.position[1]))
+                            self.make_rock("small", (rock.position[0] - 10, rock.position[1]))
+                            self.score += 50
+                    else:
+                        # если ракета попадет в небольшой камень, уничтожьте его,
+                        # сделайте один большой камень, если есть менее 10 камней
+                        # на экране, и дать 100 баллов
+                        if distance(missile.position, rock.position) < 30:
+                            self.rocks.remove(rock)
+                            if missile in self.spaceship.active_missiles:
+                                self.spaceship.active_missiles.remove(missile)
+
+                            if len(self.rocks) < 10:
+                                self.make_rock()
+
+                            self.score += 100
+
+    def rocks_physics(self):
+        """Физика камня"""
+
+        # Проверка камней
+        if len(self.rocks) > 0:
+
+            for rock in self.rocks:
+                # Движение камня
+                rock.move()
+
+                # смерть от метеора
+                if distance(rock.position, self.spaceship.position) < self.death_distances[rock.size]:
+                    self.die()
+
+                # если камень выходит из экрана, и их меньше, чем 10
+                # создайте новый камень с тем же размером
+                elif distance(rock.position, (self.width / 2, self.height / 2)) > \
+                        math.sqrt((self.width / 2) ** 2 + (self.height / 2) ** 2):
+
+                    self.rocks.remove(rock)
+                    if len(self.rocks) < 10:
+                        self.make_rock(rock.size)
+
+    def draw(self):
+        """Обновление дисплея"""
+        # все, что мы рисуем сейчас, находится в буфере, который не отображается
+        self.screen.blit(self.bg_color, (0, 0))
+
+        # если нас нет на экране приветствия
+        if self.state != MyGame.WELCOME:
+
+            # Рисуем кораблик
+            self.spaceship.draw_on(self.screen)
+
+            # При отсутствии актив-пулек
+            if len(self.spaceship.active_missiles) > 0:
+                for missile in self.spaceship.active_missiles:
+                    missile.draw_on(self.screen)
+
+            # Метеоры... Снова они
+            if len(self.rocks) > 0:
+                for rock in self.rocks:
+                    rock.draw_on(self.screen)
+
+            # При состоянии игры - играет
+            if self.state == MyGame.PLAYING:
+
+                # Счетчик += 1
+                self.counter += 1
+
+                if self.counter == 20 * self.FPS:
+
+                    # Повышение сложности(20 секунд без смерти)
+
+                    if len(self.rocks) < 15:
+                        # Новый камушек
+                        self.make_rock()
+
+                    # Минимальное расстояния для создания
+                    if self.min_rock_distance < 200:
+                        self.min_rock_distance -= 50
+
+                    # Обнуление Счетчика
+
+            # дисплэй Счетчика
+            scores_text = self.medium_font.render(str(self.score), True, (0, 155, 0))
+            draw_centered(scores_text, self.screen,
+                          (self.width - scores_text.get_width(), scores_text.get_height() + 10))
+
+            # если игра окончена, выведите текст игры на экран
+            if self.state == MyGame.GAME_OVER or self.state == MyGame.STARTING:
+                draw_centered(self.gameover_text, self.screen, (self.width // 2, self.height // 2 -
+                                                                self.gameover_text.get_height()))
+
+                draw_centered(self.gameover1_text, self.screen, (self.width // 2, self.height // 2 +
+                                                                 self.gameover_text.get_height()))
+
+            # Дисплей жизни
+            for i in range(self.lives):
+                draw_centered(self.lives_image, self.screen, (self.lives_image.get_width() * i * 1.2 + 40,
+                                                              self.lives_image.get_height() // 2))
+
+        else:
+            # Приветствие
+            draw_centered(self.welcome_asteroids, self.screen, (self.width // 2, self.height // 2 -
+                                                                self.welcome_asteroids.get_height()))
+
+            draw_centered(self.welcome_desc, self.screen, (self.width // 2, self.height // 2 +
+                                                           self.welcome_desc.get_height()))
+
+        pygame.display.flip()
+
+
+MyGame().run()
+pygame.quit()
+sys.exit()
