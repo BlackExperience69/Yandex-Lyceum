@@ -588,4 +588,3 @@ class MyGame(object):
 MyGame().run()
 pygame.quit()
 sys.exit()
-
