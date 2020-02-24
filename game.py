@@ -22,6 +22,158 @@ def load_sound(filename):
     return pygame.mixer.Sound(os.path.join('sounds', filename))
 
 
+def draw_centered(surface1, surface2, position):
+    """Прорисовка поля для игры"""
+    rect = surface1.get_rect()
+    rect = rect.move(position[0] - rect.width // 2, position[1] - rect.height // 2)
+    surface2.blit(surface1, rect)
+
+
+def rotate_center(image, rect, angle):
+    """Поворот кораблика вокруг своей оси"""
+    rotate_image = pygame.transform.rotate(image, angle)
+    rotate_rect = rotate_image.get_rect(center=rect.center)
+    return rotate_image, rotate_rect
+
+
+def distance(p, q):
+    """Рассчет растояния между 2 точками(кораблик и метеор, метеор и пулька)"""
+    return math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2)
+
+
+class GameObject(object):
+    """Класс для создаия и генерации объектов"""
+
+    def __init__(self, position, image, speed=0):
+        self.image = image
+        self.position = list(position[:])
+        self.speed = speed
+
+    def draw_on(self, screen):
+        draw_centered(self.image, screen, self.position)
+
+    def size(self):
+        return max(self.image.get_height(), self.image.get_width())
+
+    def radius(self):
+        return self.image.get_width() / 2
+
+
+class Spaceship(GameObject):
+    def __init__(self, position):
+        """Инициализация объекта космического корабля с учетом его положения"""
+        super(Spaceship, self).__init__(position, load_image_convert_alpha('zaca.png'))
+
+        self.image_on = load_image_convert_alpha('zacaf.png')
+        self.image_die = load_image_convert_alpha('bang.png')
+        self.direction = [0, -1]
+        self.is_throttle_on = False
+        self.bang = False
+        self.angle = 0
+
+        # список для хранения ракет, выпущенных кораблем
+        self.active_missiles = []
+
+    def draw_on(self, screen):
+        """Прорисовка корыбля"""
+
+        # Находится ли корабль в движении или нет
+        if self.bang:
+            new_image, rect = rotate_center(self.image_die, self.image_on.get_rect(), self.angle)
+
+        if self.is_throttle_on:
+            new_image, rect = rotate_center(self.image_on, self.image_on.get_rect(), self.angle)
+
+        else:
+            new_image, rect = rotate_center(self.image, self.image.get_rect(), self.angle)
+
+        draw_centered(new_image, screen, self.position)
+
+    def move(self):
+        """Стоит ли обновлять один кадр для объекта..."""
+
+        # calculate the direction from the angle variable
+        self.direction[0] = math.sin(-math.radians(self.angle))
+        self.direction[1] = -math.cos(math.radians(self.angle))
+
+        # calculate the position from the direction and speed
+        self.position[0] += self.direction[0] * self.speed
+        self.position[1] += self.direction[1] * self.speed
+
+    def fire(self):
+        """Создание пули и выстрел"""
+
+        # корректировка ракеты по углу наклона космического корабля
+        # adjust [] используется для удержания положения точки откуда должна быть выпущена ракета
+        adjust = [0, 0]
+        adjust[0] = math.sin(-math.radians(self.angle)) * self.image.get_width()
+        adjust[1] = -math.cos(math.radians(self.angle)) * self.image.get_height()
+
+        # Создание новой ракеты
+        new_missile = Missile((self.position[0] + adjust[0], self.position[1] + adjust[1] / 2), self.angle)
+        self.active_missiles.append(new_missile)
+
+
+class Missile(GameObject):
+    """Создание ракеты"""
+
+    def __init__(self, position, angle, speed=15):
+        super(Missile, self).__init__(position, load_image_convert_alpha('missile.png'))
+
+        self.angle = angle
+        self.direction = [0, 0]
+        self.speed = speed
+
+    def move(self):
+        """Движение ракеты"""
+
+        # Вычисление направления по переменной угла(так проще)
+        self.direction[0] = math.sin(-math.radians(self.angle))
+        self.direction[1] = -math.cos(math.radians(self.angle))
+
+        # Вычисление позиции согласно направлению и скорости
+        self.position[0] += self.direction[0] * self.speed
+        self.position[1] += self.direction[1] * self.speed
+
+
+class Rock(GameObject):
+    """Метеориты"""
+
+    def __init__(self, position, size, speed=4):
+        """Инициализация метеора: его размер и позиция"""
+
+        # если размер допустим
+        if size in {"big", "normal", "small"}:
+
+            # загружаем изображение
+            str_filename = "rock-" + str(size) + ".png"
+            super(Rock, self).__init__(position, load_image_convert_alpha(str_filename))
+            self.size = size
+
+        self.position = list(position)
+
+        self.speed = speed
+
+        # Создание рандомного направления
+        if bool(random.getrandbits(1)):
+            rand_x = random.random() * -1
+        else:
+            rand_x = random.random()
+
+        if bool(random.getrandbits(1)):
+            rand_y = random.random() * -1
+        else:
+            rand_y = random.random()
+
+        self.direction = [rand_x, rand_y]
+
+    def move(self):
+        """Движение метеора"""
+
+        self.position[0] += self.direction[0] * self.speed
+        self.position[1] += self.direction[1] * self.speed
+
+
 class MyGame(object):
     # определение и инициализация состояний игры
     PLAYING, DYING, GAME_OVER, STARTING, WELCOME = range(5)
@@ -157,7 +309,8 @@ class MyGame(object):
 
         # Состояние игры - играет
         self.state = MyGame.PLAYING
-        def run(self):
+
+    def run(self):
         """Бесконечный цикл обработки событий"""
         running = True
         while running:
@@ -435,3 +588,4 @@ class MyGame(object):
 MyGame().run()
 pygame.quit()
 sys.exit()
+
